@@ -1,0 +1,21 @@
+const { spawn } = require("node:child_process");
+const electron = require("electron");
+
+const env = {
+  ...process.env,
+  VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
+};
+
+delete env.ELECTRON_RUN_AS_NODE;
+
+const child = spawn(electron, ["dist/main/main/app/main.js"], {
+  env,
+  stdio: "inherit"
+});
+
+child.on("exit", (code, signal) => {
+  if (signal) {
+    process.kill(process.pid, signal);
+  }
+  process.exit(code ?? 0);
+});

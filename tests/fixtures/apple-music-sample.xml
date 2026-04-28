@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Major Version</key><integer>1</integer>
+  <key>Minor Version</key><integer>1</integer>
+  <key>Tracks</key>
+  <dict>
+    <key>1001</key>
+    <dict>
+      <key>Name</key><string>First Groove</string>
+      <key>Artist</key><string>Architect One</string>
+      <key>Album</key><string>Blueprints</string>
+      <key>Genre</key><string>House</string>
+      <key>Total Time</key><integer>360000</integer>
+      <key>Location</key><string>file:///Users/dj/Music/First%20Groove.mp3</string>
+      <key>BPM</key><integer>124</integer>
+      <key>Rating</key><integer>80</integer>
+      <key>Play Count</key><integer>7</integer>
+    </dict>
+    <key>1002</key>
+    <dict>
+      <key>Name</key><string>Late Bridge</string>
+      <key>Artist</key><string>Architect Two</string>
+      <key>Total Time</key><integer>300000</integer>
+      <key>Location</key><string>file:///Users/dj/Music/Late%20Bridge.mp3</string>
+    </dict>
+  </dict>
+</dict>
+</plist>
