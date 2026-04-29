@@ -6,7 +6,7 @@ DJ Set Architect is a local-first Electron desktop app for planning complete DJ 
 
 - Electron, React, TypeScript
 - SQLite via `better-sqlite3`
-- Local audio feature provider interface with an Essentia.js worker-ready stub
+- Local audio feature extraction with Essentia.js/WASM in a worker thread
 - OpenKeyScan local API adapter with graceful deterministic fallback
 - Typed IPC through a safe preload API
 
@@ -41,4 +41,10 @@ The app stores its SQLite database at Electron's `userData` path as `dj-set-arch
 
 OpenKeyScan is queried at `http://127.0.0.1:8765` with `GET /health` and `POST /analyze`. If unavailable, the app uses a deterministic stub provider and marks `key_source = "stub"`.
 
-The audio feature provider runs through a worker thread and currently returns deterministic local feature estimates. The provider boundary is ready for Essentia.js/WASM wiring without changing the renderer or set generation code.
+The audio feature provider runs through a worker thread. It decodes local files with bundled FFmpeg to mono PCM, feeds the signal to Essentia.js/WASM, and extracts BPM, danceability, loudness, spectral flux, onset density, low-frequency energy, dynamic complexity, and normalized energy. If decoding or analysis fails for a file, the provider falls back to deterministic local estimates so batch analysis can continue.
+
+Native SQLite must be rebuilt for Electron after dependency changes:
+
+```bash
+npm run rebuild:native
+```

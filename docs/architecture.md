@@ -44,4 +44,4 @@ The MVP defines provider interfaces for key detection and audio features:
 - `KeyDetectionProvider`
 - `AudioFeatureProvider`
 
-OpenKeyScan and Essentia.js can be replaced or upgraded behind these interfaces without changing renderer code.
+OpenKeyScan and Essentia.js can be replaced or upgraded behind these interfaces without changing renderer code. The current Essentia provider runs in `src/workers/audio-analysis.worker.ts`, decodes audio through FFmpeg, then calls Essentia.js/WASM algorithms from the worker thread.

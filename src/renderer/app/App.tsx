@@ -174,6 +174,19 @@ function App() {
               <button disabled={busy || !hasElectronApi} onClick={() => runAction(refreshAnalysisStatus)}>
                 Refresh Status
               </button>
+              <button
+                className="danger"
+                disabled={busy || coverage.runningJobs > 0 || !hasElectronApi}
+                onClick={() =>
+                  runAction(async () => {
+                    setCoverage(await getApi().analysis.prune());
+                    await refresh();
+                    setMessage("Previous analysis data was pruned. You can run batch analysis again.");
+                  })
+                }
+              >
+                Prune Analysis Data
+              </button>
             </div>
           </section>
         )}

@@ -4,6 +4,7 @@ export const IPC_CHANNELS = {
   tracksGetById: "tracks:getById",
   analysisRunBatch: "analysis:runBatch",
   analysisGetStatus: "analysis:getStatus",
+  analysisPrune: "analysis:prune",
   setsGenerate: "sets:generate",
   setsGetDraft: "sets:getDraft",
   exportsJson: "exports:json",

@@ -56,6 +56,11 @@ export function registerIpcHandlers(db: AppDatabase): void {
 
   ipcMain.handle(IPC_CHANNELS.analysisGetStatus, () => getAnalysisStatus(db));
 
+  ipcMain.handle(IPC_CHANNELS.analysisPrune, () => {
+    db.pruneAnalysisData();
+    return getAnalysisStatus(db);
+  });
+
   ipcMain.handle(IPC_CHANNELS.analysisRunBatch, async () => {
     const job = db.createJob("feature_analysis");
     const tracks = db.getTracksNeedingAnalysis();

@@ -33,6 +33,11 @@ button:disabled {
   opacity: 0.55;
 }
 
+button.danger {
+  border-color: #9e332c;
+  background: #9e332c;
+}
+
 .shell {
   min-height: 100vh;
   display: grid;

@@ -15,7 +15,8 @@ const api: DjSetArchitectApi = {
   },
   analysis: {
     runBatch: () => ipcRenderer.invoke(IPC_CHANNELS.analysisRunBatch),
-    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.analysisGetStatus)
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.analysisGetStatus),
+    prune: () => ipcRenderer.invoke(IPC_CHANNELS.analysisPrune)
   },
   sets: {
     generate: (request: GenerateSetRequest) => ipcRenderer.invoke(IPC_CHANNELS.setsGenerate, request),

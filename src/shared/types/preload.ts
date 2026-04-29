@@ -11,6 +11,7 @@ export interface DjSetArchitectApi {
   analysis: {
     runBatch: () => Promise<FeatureCoverage>;
     getStatus: () => Promise<FeatureCoverage>;
+    prune: () => Promise<FeatureCoverage>;
   };
   sets: {
     generate: (request: GenerateSetRequest) => Promise<SetDraft>;

@@ -157,6 +157,14 @@ export class AppDatabase {
       .run(feature);
   }
 
+  pruneAnalysisData(): void {
+    const transaction = this.db.transaction(() => {
+      this.db.prepare("DELETE FROM track_features").run();
+      this.db.prepare("DELETE FROM analysis_jobs WHERE type IN ('feature_analysis', 'key_analysis')").run();
+    });
+    transaction();
+  }
+
   createJob(type: AnalysisJob["type"]): AnalysisJob {
     const now = new Date().toISOString();
     const job: AnalysisJob = {

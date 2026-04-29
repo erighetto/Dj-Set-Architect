@@ -10,7 +10,7 @@
 - Domain types for tracks, features, set drafts, transitions, jobs, providers, profiles, and energy curves.
 - Feature normalization with provenance.
 - OpenKeyScan adapter plus graceful deterministic fallback.
-- Worker-thread audio feature provider stub ready for Essentia.js/WASM.
+- Worker-thread Essentia.js/WASM audio feature provider with FFmpeg decoding and deterministic fallback.
 - Scoring engine with explainable component scores.
 - Safe, Balanced, and Exploratory profiles.
 - Three energy curves.
@@ -21,7 +21,6 @@
 
 ## Still Stubbed
 
-- Real Essentia.js/WASM feature extraction.
-- Confirmed OpenKeyScan endpoint details beyond the adapter contract.
+- Confirmed OpenKeyScan analysis endpoint details beyond the health check and adapter contract.
 
-These are intentionally behind provider interfaces so the MVP structure remains runnable and local-first while integration details are finalized.
+OpenKeyScan remains intentionally behind a provider interface so the MVP structure remains runnable and local-first while final analysis endpoint details are confirmed.
