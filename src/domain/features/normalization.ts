@@ -1,6 +1,7 @@
 import type { AudioFeatureResult, FeatureSource, KeyDetectionResult, Track, TrackFeature } from "../../shared/types/domain.js";
 import { FEATURE_VERSION } from "../../shared/constants/features.js";
 import { normalizeToCamelotKey } from "../scoring/camelot.js";
+import { extractStyleTags } from "../scoring/styleAffinity.js";
 
 export function clamp01(value: number): number {
   if (!Number.isFinite(value)) {
@@ -77,6 +78,10 @@ export function mergeFeatureResults(
 
   const camelot = normalizeToCamelotKey(key?.camelotKey ?? key?.musicalKey ?? existing?.camelotKey);
 
+  // Extract style tags from track metadata
+  const styleTags = extractStyleTags(track as any);
+  const styleSource: FeatureSource = "imported";
+
   return {
     trackId: track.id,
     bpm,
@@ -91,6 +96,9 @@ export function mergeFeatureResults(
     onsetDensity: audio?.onsetDensity ?? existing?.onsetDensity ?? null,
     lowFrequencyEnergy: audio?.lowFrequencyEnergy ?? existing?.lowFrequencyEnergy ?? null,
     dynamicComplexity: audio?.dynamicComplexity ?? existing?.dynamicComplexity ?? null,
+    styleTags: styleTags.length > 0 ? styleTags : existing?.styleTags ?? null,
+    styleSource: styleTags.length > 0 ? styleSource : existing?.styleSource ?? null,
+    styleEmbedding: existing?.styleEmbedding ?? null,
     featureVersion: FEATURE_VERSION,
     updatedAt: now
   };

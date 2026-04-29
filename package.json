@@ -6,6 +6,7 @@
   "type": "module",
   "main": "dist/main/main/app/main.js",
   "scripts": {
+    "postinstall": "electron-rebuild",
     "dev": "concurrently -k \"vite --host 127.0.0.1\" \"wait-on tcp:5173 && npm run dev:electron\"",
     "dev:electron": "npm run build:main && node scripts/run-electron-dev.cjs",
     "build": "npm run build:main && vite build",

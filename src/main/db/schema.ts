@@ -35,6 +35,9 @@ CREATE TABLE IF NOT EXISTS track_features (
   onset_density REAL,
   low_frequency_energy REAL,
   dynamic_complexity REAL,
+  style_tags TEXT,
+  style_source TEXT,
+  style_embedding TEXT,
   feature_version TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -81,6 +84,7 @@ CREATE TABLE IF NOT EXISTS transition_scores (
   danceability_score REAL,
   mood_score REAL,
   genre_score REAL,
+  style_score REAL,
   rationale_json TEXT NOT NULL
 );
 

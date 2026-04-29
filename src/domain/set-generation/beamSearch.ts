@@ -14,11 +14,14 @@ import {
 } from "../../shared/constants/features.js";
 import { energyCurveValue } from "../scoring/energyCurves.js";
 import { getTrackBpm, scoreTransition } from "../scoring/transitionScoring.js";
+import { deriveStyleProfile, isStyleOutlier, extractStyleTags } from "../scoring/styleAffinity.js";
+import type { StyleProfile } from "../scoring/styleAffinity.js";
 
 interface PathState {
   tracks: TrackWithFeatures[];
   nextSeedIndex: number;
   score: number;
+  styleProfile: StyleProfile;
 }
 
 export class SetGenerationError extends Error {
@@ -85,7 +88,10 @@ export function generateSetDraft(
   const averageDuration = median(candidates.map((track) => track.durationSeconds)) || 300;
   const maxSteps = Math.max(seedTracks.length, Math.ceil((request.targetDurationSeconds + request.durationToleranceSeconds) / averageDuration) + 2);
 
-  let beam: PathState[] = [{ tracks: [seedTracks[0]], nextSeedIndex: 1, score: 0 }];
+  // Derive style profile from seed tracks
+  const seedStyleProfile = deriveStyleProfile(seedTracks);
+
+  let beam: PathState[] = [{ tracks: [seedTracks[0]], nextSeedIndex: 1, score: 0, styleProfile: seedStyleProfile }];
   const completed: PathState[] = [];
 
   for (let step = 0; step < maxSteps && beam.length > 0; step += 1) {
@@ -128,7 +134,8 @@ export function generateSetDraft(
         expanded.push({
           tracks: newTracks,
           nextSeedIndex: newNextSeedIndex,
-          score: scorePath(newTracks, request, newNextSeedIndex, seedTracks.length)
+          score: scorePath(newTracks, request, newNextSeedIndex, seedTracks.length, state.styleProfile),
+          styleProfile: state.styleProfile
         });
       }
     }
@@ -146,7 +153,7 @@ export function generateSetDraft(
   }
 
   const best = allViable.sort((a, b) => rankCompletedPath(b, request) - rankCompletedPath(a, request))[0];
-  return buildSetDraft(best.tracks, request);
+  return buildSetDraft(best.tracks, request, best.styleProfile);
 }
 
 function sortTracks(a: TrackWithFeatures, b: TrackWithFeatures): number {
@@ -175,11 +182,20 @@ function rankCandidates(
         variantProfile: request.variantProfile,
         energyCurve: request.energyCurve,
         fromPositionRatio: fromPosition,
-        toPositionRatio: toPosition
+        toPositionRatio: toPosition,
+        seedStyleProfile: state.styleProfile
       });
       const curveScore = curveAlignment(candidate, request.energyCurve, toPosition);
       const artistPenalty = current.artist.toLowerCase() === candidate.artist.toLowerCase() ? 0.12 : 0;
-      return { candidate, score: transition.transitionScore + curveScore * 0.3 - artistPenalty };
+      
+      // Apply style outlier penalty
+      const isOutlier = isStyleOutlier(transition.styleScore ?? 0.5, request.variantProfile);
+      const styleOutlierPenalty = isOutlier ? 0.15 : 0;
+      
+      return {
+        candidate,
+        score: transition.transitionScore + curveScore * 0.3 - artistPenalty - styleOutlierPenalty
+      };
     })
     .sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id))
     .slice(0, limit)
@@ -190,10 +206,11 @@ function scorePath(
   tracks: TrackWithFeatures[],
   request: GenerateSetRequest,
   nextSeedIndex: number,
-  seedCount: number
+  seedCount: number,
+  styleProfile: StyleProfile
 ): number {
   const duration = totalDuration(tracks);
-  const transitions = scoreTransitions(tracks, request);
+  const transitions = scoreTransitions(tracks, request, styleProfile);
   const averageTransitionScore =
     transitions.length === 0
       ? 0.7
@@ -213,9 +230,9 @@ function rankCompletedPath(state: PathState, request: GenerateSetRequest): numbe
   return state.score + toleranceBonus - Math.abs(duration - request.targetDurationSeconds) / request.targetDurationSeconds;
 }
 
-function buildSetDraft(tracks: TrackWithFeatures[], request: GenerateSetRequest): SetDraft {
+function buildSetDraft(tracks: TrackWithFeatures[], request: GenerateSetRequest, styleProfile?: StyleProfile): SetDraft {
   const total = totalDuration(tracks);
-  const transitions = scoreTransitions(tracks, request);
+  const transitions = scoreTransitions(tracks, request, styleProfile);
   const now = new Date().toISOString();
   return {
     id: randomUUID(),
@@ -236,7 +253,7 @@ function buildSetDraft(tracks: TrackWithFeatures[], request: GenerateSetRequest)
   };
 }
 
-function scoreTransitions(tracks: TrackWithFeatures[], request: GenerateSetRequest): TransitionScore[] {
+function scoreTransitions(tracks: TrackWithFeatures[], request: GenerateSetRequest, styleProfile?: StyleProfile): TransitionScore[] {
   const total = totalDuration(tracks);
   let elapsed = 0;
   const transitions: TransitionScore[] = [];
@@ -251,7 +268,8 @@ function scoreTransitions(tracks: TrackWithFeatures[], request: GenerateSetReque
         variantProfile: request.variantProfile,
         energyCurve: request.energyCurve,
         fromPositionRatio: fromPosition,
-        toPositionRatio: toPosition
+        toPositionRatio: toPosition,
+        seedStyleProfile: styleProfile
       })
     );
   }
@@ -268,7 +286,8 @@ function toSetTrack(track: TrackWithFeatures, index: number): SetTrack {
     bpm: getTrackBpm(track),
     camelotKey: track.features?.camelotKey ?? null,
     energyScore: track.features?.energyScore ?? null,
-    danceabilityScore: track.features?.danceabilityScore ?? null
+    danceabilityScore: track.features?.danceabilityScore ?? null,
+    styleTags: track.features?.styleTags ?? extractStyleTags(track) ?? null
   };
 }
 

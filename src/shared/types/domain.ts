@@ -37,6 +37,9 @@ export interface TrackFeature {
   onsetDensity?: number | null;
   lowFrequencyEnergy?: number | null;
   dynamicComplexity?: number | null;
+  styleTags?: string[] | null;
+  styleSource?: FeatureSource | null;
+  styleEmbedding?: number[] | null;
   featureVersion: string;
   updatedAt: string;
 }
@@ -55,6 +58,7 @@ export interface SetTrack {
   camelotKey?: string | null;
   energyScore?: number | null;
   danceabilityScore?: number | null;
+  styleTags?: string[] | null;
 }
 
 export interface TransitionScore {
@@ -67,6 +71,7 @@ export interface TransitionScore {
   danceabilityScore?: number | null;
   moodScore?: number | null;
   genreScore?: number | null;
+  styleScore?: number | null;
   rationale: string[];
 }
 

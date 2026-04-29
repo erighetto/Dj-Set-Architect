@@ -3,6 +3,8 @@ import { camelotCompatibilityScore, camelotRationale } from "./camelot.js";
 import { targetEnergyDelta } from "./energyCurves.js";
 import { VARIANT_PROFILE_WEIGHTS } from "./variantProfiles.js";
 import type { ScoringWeights } from "./variantProfiles.js";
+import { computeStyleAffinityScore, deriveStyleProfile, extractStyleTags, getStyleRationale } from "./styleAffinity.js";
+import type { StyleProfile } from "./styleAffinity.js";
 
 export function bpmScore(from?: number | null, to?: number | null, alpha = 0.08): number {
   if (!from || !to) {
@@ -51,6 +53,7 @@ export function scoreTransition(
     energyCurve: EnergyCurve;
     fromPositionRatio: number;
     toPositionRatio: number;
+    seedStyleProfile?: StyleProfile;
   }
 ): TransitionScore {
   const weights = VARIANT_PROFILE_WEIGHTS[options.variantProfile];
@@ -59,8 +62,18 @@ export function scoreTransition(
   const key = camelotCompatibilityScore(from.features?.camelotKey, to.features?.camelotKey);
   const energy = energyProgressionScore(from.features?.energyScore, to.features?.energyScore, expectedDelta);
   const dance = danceabilityScore(from.features?.danceabilityScore, to.features?.danceabilityScore);
+
+  // Compute style affinity if profile is provided
+  let style = 0.5;
+  let styleRationale = "";
+  if (options.seedStyleProfile) {
+    style = computeStyleAffinityScore(to, options.seedStyleProfile, { useEmbeddings: false });
+    const candidateTags = to.features?.styleTags || extractStyleTags(to);
+    styleRationale = getStyleRationale(style, candidateTags, options.seedStyleProfile.mainStyles);
+  }
+
   const transitionScore = weightedAverage(
-    { bpm, key, energy, danceability: dance, mood: 0.5, genre: 0.5 },
+    { bpm, key, energy, danceability: dance, mood: 0.5, genre: 0.5, style },
     weights
   );
 
@@ -74,8 +87,9 @@ export function scoreTransition(
       : "Energy movement diverges from the selected curve",
     dance >= 0.8
       ? "Danceability remains consistent"
-      : "Danceability changes noticeably"
-  ];
+      : "Danceability changes noticeably",
+    styleRationale ? styleRationale : undefined
+  ].filter((msg) => msg !== undefined) as string[];
 
   return {
     fromTrackId: from.id,
@@ -87,6 +101,7 @@ export function scoreTransition(
     danceabilityScore: dance,
     moodScore: null,
     genreScore: null,
+    styleScore: style,
     rationale
   };
 }
