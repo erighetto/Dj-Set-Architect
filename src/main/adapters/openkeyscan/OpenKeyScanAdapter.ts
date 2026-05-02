@@ -51,16 +51,16 @@ export class OpenKeyScanAdapter implements KeyDetectionProvider {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/analyze`, {
+      const response = await fetch(`${this.baseUrl}/analyze/single`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: track.location }),
+        body: JSON.stringify({ file: track.location }),
         signal: AbortSignal.timeout(30000)
       });
       if (!response.ok) {
         return { trackId: track.id, keySource: "openkeyscan", error: `OpenKeyScan returned ${response.status}` };
       }
-      const payload = (await response.json()) as { key?: string; camelotKey?: string; confidence?: number };
+      const payload = (await response.json()) as { success?: boolean; file?: string; key?: string; camelotKey?: string; confidence?: number };
       const camelotKey = normalizeToCamelotKey(payload.camelotKey ?? payload.key);
       return {
         trackId: track.id,

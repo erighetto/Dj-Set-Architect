@@ -57,6 +57,25 @@ async function analyze(input: Track): Promise<AudioFeatureResult> {
         dynamicComplexity * 0.12
     );
 
+    const styleEmbedding = computeStyleEmbedding([
+      energyScore,
+      clamp01(Number(danceability?.danceability ?? 0) / 10),
+      loudnessPrimitive,
+      spectralFlux,
+      onsetDensity,
+      lowFrequencyEnergy,
+      dynamicComplexity,
+      bpm != null ? normalizeBpm(bpm) ?? 0 : 0
+    ]);
+    const styleTags = computeAudioStyleTags({
+      energyScore,
+      danceabilityScore: clamp01(Number(danceability?.danceability ?? 0) / 10),
+      lowFrequencyEnergy,
+      dynamicComplexity,
+      spectralFlux,
+      bpm: bpm ?? 0
+    }, input);
+
     return {
       trackId: input.id,
       bpm,
@@ -68,6 +87,9 @@ async function analyze(input: Track): Promise<AudioFeatureResult> {
       onsetDensity,
       lowFrequencyEnergy,
       dynamicComplexity,
+      styleTags,
+      styleSource: "essentiajs",
+      styleEmbedding,
       featureVersion: FEATURE_VERSION
     };
   } finally {
@@ -198,6 +220,58 @@ function normalizePositive(value: number, expectedMax: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, Math.round(value * 1000) / 1000));
+}
+
+function computeStyleEmbedding(values: number[]): number[] {
+  const normalized = values.map((value) => clamp01(value));
+  return normalized.flatMap((value, index) => [value, clamp01((value + normalized[(index + 1) % normalized.length]) / 2)]).slice(0, 32);
+}
+
+function computeAudioStyleTags(
+  features: {
+    energyScore: number;
+    danceabilityScore: number;
+    lowFrequencyEnergy: number;
+    dynamicComplexity: number;
+    spectralFlux: number;
+    bpm: number;
+  },
+  track: Track
+): string[] {
+  const tags = new Set<string>();
+
+  if (track.genre) {
+    track.genre
+      .split(/[,;\/|]/)
+      .map((tag) => tag.trim().toLowerCase())
+      .filter(Boolean)
+      .forEach((tag) => tags.add(tag.replace(/\s+/g, "_")));
+  }
+
+  if (features.energyScore >= 0.7 && features.danceabilityScore >= 0.55) {
+    tags.add("dance");
+  }
+  if (features.lowFrequencyEnergy >= 0.5 && features.bpm >= 110) {
+    tags.add("house");
+  }
+  if (features.energyScore < 0.35 && features.danceabilityScore < 0.45) {
+    tags.add("ambient");
+  }
+  if (features.dynamicComplexity >= 0.7) {
+    tags.add("experimental");
+  }
+  if (features.spectralFlux >= 0.5) {
+    tags.add("electronic");
+  }
+  if (features.bpm > 140) {
+    tags.add("drum_and_bass");
+  }
+
+  if (tags.size === 0) {
+    tags.add("electronic");
+  }
+
+  return Array.from(tags);
 }
 
 function safeCall<T>(fn: () => T): T | null {

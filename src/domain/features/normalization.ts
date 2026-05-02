@@ -77,10 +77,14 @@ export function mergeFeatureResults(
     bpm == null ? null : bpm === importedBpm && !options.overwriteImportedBpm ? "imported" : audio?.bpmSource ?? "essentiajs";
 
   const camelot = normalizeToCamelotKey(key?.camelotKey ?? key?.musicalKey ?? existing?.camelotKey);
+  const keySource = key?.keySource ?? existing?.keySource ?? null;
 
-  // Extract style tags from track metadata
-  const styleTags = extractStyleTags(track as any);
-  const styleSource: FeatureSource = "imported";
+  const audioStyleTags = audio?.styleTags?.length ? audio.styleTags : [];
+  const importedStyleTags = extractStyleTags(track as any);
+  const styleTags = audioStyleTags.length > 0 ? audioStyleTags : importedStyleTags;
+  const styleSource: FeatureSource | null = audio?.styleEmbedding
+    ? audio.styleSource ?? "essentiajs"
+    : existing?.styleSource ?? "imported";
 
   return {
     trackId: track.id,
@@ -88,7 +92,7 @@ export function mergeFeatureResults(
     bpmSource,
     musicalKey: key?.musicalKey ?? existing?.musicalKey ?? null,
     camelotKey: camelot,
-    keySource: camelot ? key?.keySource ?? existing?.keySource ?? "openkeyscan" : null,
+    keySource,
     energyScore: audio ? clamp01(audio.energyScore) : existing?.energyScore ?? null,
     danceabilityScore: audio ? clamp01(audio.danceabilityScore) : existing?.danceabilityScore ?? null,
     loudness: audio?.loudness ?? existing?.loudness ?? null,
@@ -97,8 +101,8 @@ export function mergeFeatureResults(
     lowFrequencyEnergy: audio?.lowFrequencyEnergy ?? existing?.lowFrequencyEnergy ?? null,
     dynamicComplexity: audio?.dynamicComplexity ?? existing?.dynamicComplexity ?? null,
     styleTags: styleTags.length > 0 ? styleTags : existing?.styleTags ?? null,
-    styleSource: styleTags.length > 0 ? styleSource : existing?.styleSource ?? null,
-    styleEmbedding: existing?.styleEmbedding ?? null,
+    styleSource: styleSource,
+    styleEmbedding: audio?.styleEmbedding ?? existing?.styleEmbedding ?? null,
     featureVersion: FEATURE_VERSION,
     updatedAt: now
   };

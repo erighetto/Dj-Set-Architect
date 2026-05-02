@@ -129,6 +129,9 @@ export interface AudioFeatureResult {
   onsetDensity?: number | null;
   lowFrequencyEnergy?: number | null;
   dynamicComplexity?: number | null;
+  styleTags?: string[] | null;
+  styleSource?: FeatureSource | null;
+  styleEmbedding?: number[] | null;
   featureVersion: string;
 }
 

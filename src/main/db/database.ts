@@ -42,6 +42,9 @@ type DbTrackRow = {
   low_frequency_energy: number | null;
   dynamic_complexity: number | null;
   feature_version: string | null;
+  style_tags: string | null;
+  style_source: string | null;
+  style_embedding: string | null;
   feature_updated_at: string | null;
 };
 
@@ -54,6 +57,19 @@ export class AppDatabase {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
     this.db.exec(SCHEMA_SQL);
+    this.resetStuckJobs();
+  }
+
+  resetStuckJobs(): void {
+    this.db
+      .prepare(
+        `UPDATE analysis_jobs
+         SET status = 'failed',
+             progress = 1,
+             error = 'Interrupted job cleared after application restart'
+         WHERE status = 'running'`
+      )
+      .run();
   }
 
   importTracks(tracks: Track[]): ImportResult {
@@ -118,6 +134,8 @@ export class AppDatabase {
          WHERE track_features.track_id IS NULL
             OR track_features.energy_score IS NULL
             OR track_features.danceability_score IS NULL
+            OR track_features.camelot_key IS NULL
+            OR track_features.key_source IS NULL
          ORDER BY tracks.artist, tracks.title`
       )
       .all() as DbTrackRow[];
@@ -125,17 +143,25 @@ export class AppDatabase {
   }
 
   upsertFeature(feature: TrackFeature): void {
+    const payload = {
+      ...feature,
+      styleTags: feature.styleTags ? JSON.stringify(feature.styleTags) : null,
+      styleEmbedding: feature.styleEmbedding ? JSON.stringify(feature.styleEmbedding) : null
+    };
+
     this.db
       .prepare(
         `
         INSERT INTO track_features (
           track_id, bpm, bpm_source, musical_key, camelot_key, key_source,
           energy_score, danceability_score, loudness, spectral_flux, onset_density,
-          low_frequency_energy, dynamic_complexity, feature_version, updated_at
+          low_frequency_energy, dynamic_complexity, style_tags, style_source,
+          style_embedding, feature_version, updated_at
         ) VALUES (
           @trackId, @bpm, @bpmSource, @musicalKey, @camelotKey, @keySource,
           @energyScore, @danceabilityScore, @loudness, @spectralFlux, @onsetDensity,
-          @lowFrequencyEnergy, @dynamicComplexity, @featureVersion, @updatedAt
+          @lowFrequencyEnergy, @dynamicComplexity, @styleTags, @styleSource,
+          @styleEmbedding, @featureVersion, @updatedAt
         )
         ON CONFLICT(track_id) DO UPDATE SET
           bpm = excluded.bpm,
@@ -150,11 +176,14 @@ export class AppDatabase {
           onset_density = excluded.onset_density,
           low_frequency_energy = excluded.low_frequency_energy,
           dynamic_complexity = excluded.dynamic_complexity,
+          style_tags = excluded.style_tags,
+          style_source = excluded.style_source,
+          style_embedding = excluded.style_embedding,
           feature_version = excluded.feature_version,
           updated_at = excluded.updated_at
         `
       )
-      .run(feature);
+      .run(payload);
   }
 
   pruneAnalysisData(): void {
@@ -391,11 +420,23 @@ const TRACK_SELECT_SQL = `
     track_features.camelot_key, track_features.key_source, track_features.energy_score,
     track_features.danceability_score, track_features.loudness, track_features.spectral_flux,
     track_features.onset_density, track_features.low_frequency_energy,
-    track_features.dynamic_complexity, track_features.feature_version,
+    track_features.dynamic_complexity, track_features.style_tags, track_features.style_source,
+    track_features.style_embedding, track_features.feature_version,
     track_features.updated_at AS feature_updated_at
   FROM tracks
   LEFT JOIN track_features ON track_features.track_id = tracks.id
 `;
+
+function parseOptionalJson<T>(value: string | null | undefined): T | null {
+  if (value == null) {
+    return null;
+  }
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
 
 function mapTrackWithFeatures(row: DbTrackRow): TrackWithFeatures {
   const features: TrackFeature | null =
@@ -415,6 +456,9 @@ function mapTrackWithFeatures(row: DbTrackRow): TrackWithFeatures {
           onsetDensity: row.onset_density,
           lowFrequencyEnergy: row.low_frequency_energy,
           dynamicComplexity: row.dynamic_complexity,
+          styleTags: parseOptionalJson<string[]>(row.style_tags),
+          styleSource: row.style_source as TrackFeature["styleSource"],
+          styleEmbedding: parseOptionalJson<number[]>(row.style_embedding),
           featureVersion: row.feature_version,
           updatedAt: row.feature_updated_at ?? row.updated_at
         };

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { AudioFeatureResult, Track } from "../../../shared/types/domain.js";
 import { FEATURE_VERSION } from "../../../shared/constants/features.js";
 import { normalizeBpm } from "../../../domain/features/normalization.js";
+import { extractStyleTags } from "../../../domain/scoring/styleAffinity.js";
 
 export interface AudioFeatureProvider {
   analyze(track: Track): Promise<AudioFeatureResult>;
@@ -46,6 +47,9 @@ export function deterministicFeatureResult(track: Track): AudioFeatureResult {
     loudness * 0.26 + spectralFlux * 0.22 + onsetDensity * 0.22 + lowFrequencyEnergy * 0.18 + dynamicComplexity * 0.12
   );
   const danceabilityScore = clamp01(0.45 + ((hash >>> 13) % 45) / 100);
+  const styleTags = extractStyleTags(track as any);
+  const styleEmbedding = deterministicStyleEmbedding(hash, [energyScore, danceabilityScore, loudness, spectralFlux, onsetDensity, lowFrequencyEnergy, dynamicComplexity]);
+
   return {
     trackId: track.id,
     bpm,
@@ -57,8 +61,22 @@ export function deterministicFeatureResult(track: Track): AudioFeatureResult {
     onsetDensity,
     lowFrequencyEnergy,
     dynamicComplexity,
+    styleTags: styleTags.length > 0 ? styleTags : null,
+    styleSource: "essentiajs",
+    styleEmbedding,
     featureVersion: FEATURE_VERSION
   };
+}
+
+function deterministicStyleEmbedding(hash: number, values: number[]): number[] {
+  const normalized = values.map((value) => clamp01(value));
+  const embedding: number[] = [];
+  for (let index = 0; index < 16; index += 1) {
+    const baseValue = normalized[index % normalized.length];
+    const shiftFactor = ((hash >> (index * 2)) & 0xff) / 255;
+    embedding.push(clamp01(baseValue * 0.6 + shiftFactor * 0.4));
+  }
+  return embedding;
 }
 
 function clamp01(value: number): number {
