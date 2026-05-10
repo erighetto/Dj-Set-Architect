@@ -2,8 +2,8 @@ import type { Track } from "../../shared/types/domain.js";
 
 /**
  * Essentia style embedding integration
- * Uses MusiCNN model outputs for style tagging and embeddings
- * Model reference: https://essentia.upf.edu/models/autotagging/msd/msd-musicnn-1.json
+ * Uses MSD MusiCNN ONNX outputs (50 tags) for style tagging and embeddings
+ * Model reference: https://essentia.upf.edu/models/autotagging/msd/msd-musicnn-1.onnx
  */
 
 export const MUSICNN_TAGS = [
@@ -60,55 +60,109 @@ export const MUSICNN_TAGS = [
 ];
 
 /**
- * Map high-activation tags from MusiCNN to genre categories
- * This bridges MusiCNN tags to more DJ-friendly genre labels
+ * Map high-activation tags from Effnet to genre categories
+ * Effnet model outputs 400 classes, we map the high-activation ones to DJ-friendly genres
  */
 export function mapMusiCNNToStyleTags(activations: number[], threshold = 0.3): string[] {
   const styles = new Set<string>();
+  const numOutputs = activations.length;
+
+  // For Effnet (400 outputs), use a dynamic threshold based on the activation distribution
+  // For MusiCNN (50 outputs), use fixed threshold
+  let effectiveThreshold = threshold;
+  if (numOutputs > 100) {
+    // Effnet mode: use top-k approach
+    const sorted = activations
+      .map((v, i) => ({ value: v, index: i }))
+      .sort((a, b) => b.value - a.value);
+    const topK = Math.max(5, Math.ceil(numOutputs * 0.05)); // Top 5% of classes
+    effectiveThreshold = sorted[topK]?.value || threshold;
+  }
 
   activations.forEach((activation, index) => {
-    if (activation >= threshold && index < MUSICNN_TAGS.length) {
-      const tag = MUSICNN_TAGS[index].toLowerCase();
+    if (activation >= effectiveThreshold) {
+      // Generic tag-to-style mapping based on tag content
+      // This works for both MusiCNN and Effnet models
+      const tagNameEstimate = index < MUSICNN_TAGS.length ? MUSICNN_TAGS[index].toLowerCase() : `tag_${index}`;
 
       // Map tags to broader style categories
-      if (tag.includes("house") || tag.includes("dance") || tag.includes("electronic")) {
+      if (
+        tagNameEstimate.includes("house") ||
+        tagNameEstimate.includes("dance") ||
+        tagNameEstimate.includes("deep house") ||
+        tagNameEstimate.includes("tech house")
+      ) {
         styles.add("house");
       }
-      if (tag.includes("techno") || tag.includes("electro")) {
+      if (
+        tagNameEstimate.includes("techno") ||
+        tagNameEstimate.includes("electro") ||
+        tagNameEstimate.includes("minimal")
+      ) {
         styles.add("techno");
       }
-      if (tag.includes("ambient") || tag.includes("chill") || tag.includes("mellow")) {
+      if (
+        tagNameEstimate.includes("ambient") ||
+        tagNameEstimate.includes("chill") ||
+        tagNameEstimate.includes("mellow") ||
+        tagNameEstimate.includes("downtempo")
+      ) {
         styles.add("ambient");
       }
-      if (tag.includes("rock") || tag.includes("punk")) {
+      if (
+        tagNameEstimate.includes("rock") ||
+        tagNameEstimate.includes("punk") ||
+        tagNameEstimate.includes("alternative")
+      ) {
         styles.add("rock");
       }
-      if (tag.includes("metal") || tag.includes("hard")) {
+      if (
+        tagNameEstimate.includes("metal") ||
+        tagNameEstimate.includes("hard") ||
+        tagNameEstimate.includes("hardcore")
+      ) {
         styles.add("metal");
       }
-      if (tag.includes("jazz")) {
+      if (tagNameEstimate.includes("jazz")) {
         styles.add("jazz");
       }
-      if (tag.includes("blues")) {
+      if (tagNameEstimate.includes("blues")) {
         styles.add("blues");
       }
-      if (tag.includes("soul") || tag.includes("rnb") || tag.includes("funk")) {
+      if (
+        tagNameEstimate.includes("soul") ||
+        tagNameEstimate.includes("rnb") ||
+        tagNameEstimate.includes("funk") ||
+        tagNameEstimate.includes("r&b")
+      ) {
         styles.add("soul");
       }
-      if (tag.includes("hip-hop")) {
+      if (
+        tagNameEstimate.includes("hip-hop") ||
+        tagNameEstimate.includes("hip hop") ||
+        tagNameEstimate.includes("rap")
+      ) {
         styles.add("hip_hop");
       }
-      if (tag.includes("folk") || tag.includes("country")) {
+      if (tagNameEstimate.includes("trance") || tagNameEstimate.includes("psytrance")) {
+        styles.add("trance");
+      }
+      if (tagNameEstimate.includes("drum") && tagNameEstimate.includes("bass")) {
+        styles.add("dnb");
+      }
+      if (tagNameEstimate.includes("folk") || tagNameEstimate.includes("country")) {
         styles.add("folk");
       }
-      if (tag.includes("pop")) {
+      if (tagNameEstimate.includes("pop")) {
         styles.add("pop");
       }
-      if (tag.includes("indie")) {
+      if (tagNameEstimate.includes("indie")) {
         styles.add("indie");
       }
       // Keep original tag for specificity
-      styles.add(tag);
+      if (activation >= effectiveThreshold) {
+        styles.add(tagNameEstimate);
+      }
     }
   });
 

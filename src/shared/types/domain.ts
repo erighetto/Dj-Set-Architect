@@ -1,4 +1,4 @@
-export type FeatureSource = "imported" | "manual" | "essentiajs" | "openkeyscan" | "stub" | "unknown";
+export type FeatureSource = "imported" | "manual" | "essentiajs" | "openkeyscan" | "musicnn" | "stub" | "unknown";
 
 export type VariantProfile = "safe" | "balanced" | "exploratory";
 

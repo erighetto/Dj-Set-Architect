@@ -292,8 +292,8 @@ export function isStyleOutlier(
 ): boolean {
   const thresholds = {
     safe: 0.6,
-    balanced: 0.4,
-    exploratory: 0.2
+    balanced: 0.35,
+    exploratory: 0.15
   };
 
   return affinityScore < thresholds[profileVariant];

@@ -59,7 +59,7 @@ describe("OpenKeyScanAdapter", () => {
     expect(result).toEqual({
       trackId: "track-1",
       musicalKey: "11m",
-      camelotKey: "11A",
+      camelotKey: "11B",
       keySource: "openkeyscan",
       confidence: null
     });

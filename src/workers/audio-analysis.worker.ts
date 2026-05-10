@@ -1,13 +1,29 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
 import ffmpegPath from "ffmpeg-static";
-import type { Track } from "../shared/types/domain.js";
+import type { Track, FeatureSource } from "../shared/types/domain.js";
 import type { AudioFeatureResult } from "../shared/types/domain.js";
 import { FEATURE_VERSION } from "../shared/constants/features.js";
+import { mapMusiCNNToStyleTags, extractStyleEmbedding } from "../domain/scoring/essentiaStyles.js";
+
+const esPkg = require("essentia.js") as {
+  Essentia: new (wasm: unknown) => EssentiaRuntime;
+  EssentiaWASM: unknown;
+  EssentiaModel: EssentiaModelModule;
+};
+
+/** Resolve deps from app root (Electron worker threads do not always resolve hoisted `node_modules` the same way). */
+const requireFromAppRoot = createRequire(join(__dirname, "../../../package.json"));
 
 const track = workerData as Track;
 
 const SAMPLE_RATE = 44100;
+const ML_SAMPLE_RATE = 16000;
+const MUSICNN_PATCH_FRAMES = 187;
+const MUSICNN_MEL_BANDS = 96;
 const FRAME_SIZE = 2048;
 const HOP_SIZE = 1024;
 
@@ -27,10 +43,6 @@ async function analyze(input: Track): Promise<AudioFeatureResult> {
     throw new Error("Decoded audio is too short for reliable Essentia.js analysis");
   }
 
-  const esPkg = require("essentia.js") as {
-    Essentia: new (wasm: unknown) => EssentiaRuntime;
-    EssentiaWASM: unknown;
-  };
   const essentia = new esPkg.Essentia(esPkg.EssentiaWASM);
   const signalVector = essentia.arrayToVector(signal);
 
@@ -57,24 +69,38 @@ async function analyze(input: Track): Promise<AudioFeatureResult> {
         dynamicComplexity * 0.12
     );
 
-    const styleEmbedding = computeStyleEmbedding([
-      energyScore,
-      clamp01(Number(danceability?.danceability ?? 0) / 10),
-      loudnessPrimitive,
-      spectralFlux,
-      onsetDensity,
-      lowFrequencyEnergy,
-      dynamicComplexity,
-      bpm != null ? normalizeBpm(bpm) ?? 0 : 0
-    ]);
-    const styleTags = computeAudioStyleTags({
-      energyScore,
-      danceabilityScore: clamp01(Number(danceability?.danceability ?? 0) / 10),
-      lowFrequencyEnergy,
-      dynamicComplexity,
-      spectralFlux,
-      bpm: bpm ?? 0
-    }, input);
+    // Try MusiCNN inference first for more reliable style classification
+    let styleTags: string[];
+    let styleEmbedding: number[];
+    let styleSource: FeatureSource = "essentiajs";
+
+    try {
+      const musinnResult = await analyzeMusiCNN(input);
+      styleTags = musinnResult.styleTags;
+      styleEmbedding = musinnResult.styleEmbedding;
+      styleSource = "musicnn";
+    } catch (error) {
+      // Fallback to heuristic-based classification
+      console.warn(`MusiCNN analysis failed for track ${input.id}, using fallback:`, error);
+      styleEmbedding = computeStyleEmbedding([
+        energyScore,
+        clamp01(Number(danceability?.danceability ?? 0) / 10),
+        loudnessPrimitive,
+        spectralFlux,
+        onsetDensity,
+        lowFrequencyEnergy,
+        dynamicComplexity,
+        bpm != null ? normalizeBpm(bpm) ?? 0 : 0
+      ]);
+      styleTags = computeAudioStyleTags({
+        energyScore,
+        danceabilityScore: clamp01(Number(danceability?.danceability ?? 0) / 10),
+        lowFrequencyEnergy,
+        dynamicComplexity,
+        spectralFlux,
+        bpm: bpm ?? 0
+      }, input);
+    }
 
     return {
       trackId: input.id,
@@ -88,7 +114,7 @@ async function analyze(input: Track): Promise<AudioFeatureResult> {
       lowFrequencyEnergy,
       dynamicComplexity,
       styleTags,
-      styleSource: "essentiajs",
+      styleSource,
       styleEmbedding,
       featureVersion: FEATURE_VERSION
     };
@@ -282,8 +308,118 @@ function safeCall<T>(fn: () => T): T | null {
   }
 }
 
+type OrtLike = typeof import("onnxruntime-node");
+
+function loadOrtRuntime(): {
+  ort: OrtLike;
+  inferenceSessionOptions?: import("onnxruntime-node").InferenceSession.SessionOptions;
+} {
+  try {
+    const ort = requireFromAppRoot("onnxruntime-node") as OrtLike;
+    return { ort };
+  } catch (nativeError) {
+    try {
+      const ortWeb = requireFromAppRoot("onnxruntime-web") as typeof import("onnxruntime-web");
+      ortWeb.env.wasm.numThreads = 1;
+      ortWeb.env.wasm.simd = true;
+      return {
+        ort: ortWeb as unknown as OrtLike,
+        inferenceSessionOptions: { executionProviders: ["wasm"] } as import("onnxruntime-node").InferenceSession.SessionOptions
+      };
+    } catch (webError) {
+      const nativeMessage = nativeError instanceof Error ? nativeError.message : String(nativeError);
+      const webMessage = webError instanceof Error ? webError.message : String(webError);
+      throw new Error(
+        `ONNX Runtime unavailable (native: ${nativeMessage}; wasm fallback: ${webMessage}). ` +
+          "Try: npm rebuild onnxruntime-node, or reinstall node_modules."
+      );
+    }
+  }
+}
+
+function buildMusiCNNMelTensor(rows: number[][]): Float32Array {
+  const tensor = new Float32Array(MUSICNN_PATCH_FRAMES * MUSICNN_MEL_BANDS);
+  const rowCount = rows.length;
+  if (rowCount === 0) {
+    return tensor;
+  }
+  const writeRow = (dstRow: number, src: number[]) => {
+    const offset = dstRow * MUSICNN_MEL_BANDS;
+    for (let band = 0; band < MUSICNN_MEL_BANDS; band += 1) {
+      tensor[offset + band] = Number(src[band] ?? 0);
+    }
+  };
+  if (rowCount >= MUSICNN_PATCH_FRAMES) {
+    const start = Math.floor((rowCount - MUSICNN_PATCH_FRAMES) / 2);
+    for (let index = 0; index < MUSICNN_PATCH_FRAMES; index += 1) {
+      writeRow(index, rows[start + index] ?? []);
+    }
+  } else {
+    const padBefore = Math.floor((MUSICNN_PATCH_FRAMES - rowCount) / 2);
+    for (let index = 0; index < rowCount; index += 1) {
+      writeRow(padBefore + index, rows[index] ?? []);
+    }
+  }
+  return tensor;
+}
+
+async function analyzeMusiCNN(track: Track): Promise<{ styleTags: string[]; styleEmbedding: number[] }> {
+  if (!track.location) {
+    throw new Error("Track has no local file path for MusiCNN analysis");
+  }
+
+  const { ort, inferenceSessionOptions } = loadOrtRuntime();
+
+  const modelPath = join(__dirname, "..", "models", "msd-musicnn-1.onnx");
+  if (!existsSync(modelPath)) {
+    throw new Error(`MusiCNN ONNX model missing at ${modelPath} (run npm install to download it)`);
+  }
+
+  const signal = await decodeAudioToMonoFloat32(track.location, ML_SAMPLE_RATE);
+  if (signal.length < ML_SAMPLE_RATE) {
+    throw new Error("Decoded audio is too short for MusiCNN analysis");
+  }
+
+  const inputExtractor = new esPkg.EssentiaModel.EssentiaTFInputExtractor(esPkg.EssentiaWASM, "musicnn");
+  let session: import("onnxruntime-node").InferenceSession | null = null;
+
+  try {
+    const melFeature = inputExtractor.computeFrameWise(signal) as InputMusiCNNFeature;
+    const melInput = buildMusiCNNMelTensor(melFeature.melSpectrum as number[][]);
+
+    session = await ort.InferenceSession.create(modelPath, inferenceSessionOptions);
+    const inputTensor = new ort.Tensor("float32", melInput, [1, MUSICNN_PATCH_FRAMES, MUSICNN_MEL_BANDS]);
+    const { activations } = await session.run({ melspectrogram: inputTensor });
+    const activationArray = Array.from(activations.data as Float32Array);
+
+    const styleTags = mapMusiCNNToStyleTags(activationArray);
+    const styleEmbedding = extractStyleEmbedding(activationArray);
+    return { styleTags, styleEmbedding };
+  } finally {
+    inputExtractor.delete();
+    if (session) {
+      await session.release();
+    }
+  }
+}
+
 interface EssentiaVector {
   delete(): void;
+}
+
+interface InputMusiCNNFeature {
+  melSpectrum: number[][];
+  frameSize: number;
+  patchSize: number;
+  melBandsSize: number;
+}
+
+interface EssentiaModelModule {
+  EssentiaTFInputExtractor: new (wasm: unknown, extractorType?: string, isDebug?: boolean) => {
+    computeFrameWise(audioSignal: Float32Array, hopSize?: number): InputMusiCNNFeature;
+    delete(): void;
+    shutdown(): void;
+  };
 }
 
 interface EssentiaRuntime {
