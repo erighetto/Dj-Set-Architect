@@ -67,7 +67,7 @@ export function scoreTransition(
   let style = 0.5;
   let styleRationale = "";
   if (options.seedStyleProfile) {
-    style = computeStyleAffinityScore(to, options.seedStyleProfile, { useEmbeddings: false });
+    style = computeStyleAffinityScore(to, options.seedStyleProfile, { useEmbeddings: true });
     const candidateTags = to.features?.styleTags || extractStyleTags(to);
     styleRationale = getStyleRationale(style, candidateTags, options.seedStyleProfile.mainStyles);
   }

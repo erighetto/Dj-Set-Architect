@@ -16,6 +16,11 @@ export function exportSetDraftToCsv(setDraft: SetDraft): string {
       "energy_score",
       "danceability_score",
       "transition_score",
+      "style_score",
+      "bpm_score",
+      "key_score",
+      "transition_energy_score",
+      "transition_danceability_score",
       "rationale"
     ]
   ];
@@ -32,6 +37,11 @@ export function exportSetDraftToCsv(setDraft: SetDraft): string {
       track.energyScore == null ? "" : String(track.energyScore),
       track.danceabilityScore == null ? "" : String(track.danceabilityScore),
       transition ? transition.transitionScore.toFixed(4) : "",
+      transition?.styleScore == null ? "" : transition.styleScore.toFixed(4),
+      transition ? transition.bpmScore.toFixed(4) : "",
+      transition ? transition.keyScore.toFixed(4) : "",
+      transition ? transition.energyScore.toFixed(4) : "",
+      transition?.danceabilityScore == null ? "" : transition.danceabilityScore.toFixed(4),
       transition ? transition.rationale.join(" | ") : ""
     ]);
   }

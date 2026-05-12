@@ -75,6 +75,17 @@ export interface TransitionScore {
   rationale: string[];
 }
 
+export interface SetDraftDiagnostics {
+  averageStyleAffinity: number | null;
+  minStyleAffinity: number | null;
+  styleOutlierCount: number;
+  repeatedArtistCount: number;
+  averageBpmScore: number | null;
+  averageKeyScore: number | null;
+  averageEnergyScore: number | null;
+  averageDanceabilityScore: number | null;
+}
+
 export interface SetDraft {
   id: string;
   name: string;
@@ -87,6 +98,7 @@ export interface SetDraft {
   globalScore: number;
   tracks: SetTrack[];
   transitions: TransitionScore[];
+  diagnostics?: SetDraftDiagnostics;
   createdAt: string;
 }
 

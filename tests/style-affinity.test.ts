@@ -156,8 +156,40 @@ describe("Style Affinity", () => {
 
     it("uses lower threshold for exploratory profile", () => {
       expect(isStyleOutlier(0.15, "balanced")).toBe(true);
-      expect(isStyleOutlier(0.15, "exploratory")).toBe(false);
+      expect(isStyleOutlier(0.15, "exploratory")).toBe(true);
+      expect(isStyleOutlier(0.25, "exploratory")).toBe(false);
     });
+  });
+
+  it("prefers house-related candidate over culturally distant son cubano", () => {
+    const profile = deriveStyleProfile([createTrack({ genre: "Deep House" })]);
+    const houseCandidate = createTrack({
+      genre: "Disco House",
+      features: { trackId: "house", styleTags: ["disco_house"], featureVersion: "1", updatedAt: new Date().toISOString() }
+    });
+    const sonCubanoCandidate = createTrack({
+      genre: "Son Cubano",
+      features: { trackId: "son", styleTags: ["son_cubano"], featureVersion: "1", updatedAt: new Date().toISOString() }
+    });
+
+    expect(computeStyleAffinityScore(houseCandidate, profile)).toBeGreaterThan(computeStyleAffinityScore(sonCubanoCandidate, profile));
+  });
+
+  it("scores exact, family, and unrelated styles distinctly", () => {
+    const profile = deriveStyleProfile([createTrack({ genre: "Deep House" })]);
+    const exact = createTrack({
+      features: { trackId: "exact", styleTags: ["deep_house"], featureVersion: "1", updatedAt: new Date().toISOString() }
+    });
+    const family = createTrack({
+      features: { trackId: "family", styleTags: ["tech_house"], featureVersion: "1", updatedAt: new Date().toISOString() }
+    });
+    const unrelated = createTrack({
+      features: { trackId: "unrelated", styleTags: ["son_cubano"], featureVersion: "1", updatedAt: new Date().toISOString() }
+    });
+
+    expect(computeStyleAffinityScore(exact, profile)).toBeGreaterThan(0.8);
+    expect(computeStyleAffinityScore(family, profile)).toBeGreaterThan(0.35);
+    expect(computeStyleAffinityScore(unrelated, profile)).toBeLessThan(0.3);
   });
 
   describe("getStyleRationale", () => {

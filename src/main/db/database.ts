@@ -13,6 +13,7 @@ import type {
   TrackWithFeatures
 } from "../../shared/types/domain.js";
 import { SCHEMA_SQL } from "./schema.js";
+import { computeSetDraftDiagnostics } from "../../domain/set-generation/beamSearch.js";
 
 const { app } = electron;
 
@@ -319,10 +320,10 @@ export class AppDatabase {
       const insertTransition = this.db.prepare(
         `INSERT INTO transition_scores (
           id, set_id, from_track_id, to_track_id, transition_score, bpm_score,
-          key_score, energy_score, danceability_score, mood_score, genre_score, rationale_json
+          key_score, energy_score, danceability_score, mood_score, genre_score, style_score, rationale_json
         ) VALUES (
           @id, @setId, @fromTrackId, @toTrackId, @transitionScore, @bpmScore,
-          @keyScore, @energyScore, @danceabilityScore, @moodScore, @genreScore, @rationaleJson
+          @keyScore, @energyScore, @danceabilityScore, @moodScore, @genreScore, @styleScore, @rationaleJson
         )`
       );
       for (const transition of draft.transitions) {
@@ -330,6 +331,7 @@ export class AppDatabase {
           id: randomUUID(),
           setId: draft.id,
           ...transition,
+          styleScore: transition.styleScore ?? null,
           rationaleJson: JSON.stringify(transition.rationale)
         });
       }
@@ -370,7 +372,7 @@ export class AppDatabase {
     const transitions = this.db
       .prepare("SELECT * FROM transition_scores WHERE set_id = @id")
       .all({ id }) as Array<Record<string, unknown>>;
-    return {
+    const draft = {
       id: set.id,
       name: set.name,
       variantProfile: set.variant_profile as SetDraft["variantProfile"],
@@ -392,7 +394,8 @@ export class AppDatabase {
           bpm: track.features?.bpm ?? track.importedBpm ?? null,
           camelotKey: track.features?.camelotKey ?? null,
           energyScore: track.features?.energyScore ?? null,
-          danceabilityScore: track.features?.danceabilityScore ?? null
+          danceabilityScore: track.features?.danceabilityScore ?? null,
+          styleTags: track.features?.styleTags ?? null
         };
       }),
       transitions: transitions.map((row) => ({
@@ -405,8 +408,13 @@ export class AppDatabase {
         danceabilityScore: row.danceability_score == null ? null : Number(row.danceability_score),
         moodScore: row.mood_score == null ? null : Number(row.mood_score),
         genreScore: row.genre_score == null ? null : Number(row.genre_score),
+        styleScore: row.style_score == null ? null : Number(row.style_score),
         rationale: JSON.parse(String(row.rationale_json)) as string[]
       }))
+    };
+    return {
+      ...draft,
+      diagnostics: computeSetDraftDiagnostics(draft.tracks, draft.transitions, draft.variantProfile)
     };
   }
 }

@@ -4,7 +4,35 @@ export interface StyleProfile {
   tags: Map<string, number>;
   mainStyles: string[];
   embeddings: number[][];
+  expandedStyles: string[];
 }
+
+const STYLE_ONTOLOGY: Record<string, string[]> = {
+  deep_house: ["house", "electronic"],
+  tech_house: ["house", "electronic"],
+  progressive_house: ["house", "electronic"],
+  tropical_house: ["house", "electronic"],
+  electro_house: ["house", "electronic"],
+  acid_house: ["house", "electronic"],
+  disco_house: ["disco", "house", "funk", "electronic"],
+  afro_house: ["house", "afro", "electronic"],
+  latin_house: ["house", "latin", "electronic"],
+  nu_disco: ["disco", "funk", "house", "electronic"],
+  disco: ["funk", "soul"],
+  son_cubano: ["latin", "acoustic", "world"],
+  salsa: ["latin"],
+  funk: ["soul"],
+  soul: ["funk"],
+  techno: ["electronic"],
+  minimal_techno: ["techno", "electronic"],
+  trance: ["electronic"],
+  psytrance: ["trance", "electronic"],
+  drum_and_bass: ["electronic"],
+  dubstep: ["electronic"],
+  ambient: ["electronic"],
+  downtempo: ["electronic"],
+  electronic_dance_music: ["electronic"]
+};
 
 /**
  * Extract style tags from track metadata (genre, album, artist, etc.)
@@ -128,6 +156,16 @@ export function normalizeStyleTags(tags: string[]): string[] {
     edm: "electronic_dance_music",
     "future garage": "future_garage",
     "tropical house": "tropical_house",
+    "nu-disco": "nu_disco",
+    "nu disco": "nu_disco",
+    "disco-house": "disco_house",
+    "disco house": "disco_house",
+    "afro-house": "afro_house",
+    "afro house": "afro_house",
+    "latin-house": "latin_house",
+    "latin house": "latin_house",
+    "son cubano": "son_cubano",
+    "son-cubano": "son_cubano",
     "bass music": "bass_music",
     "dubstep": "dubstep",
     "brostep": "dubstep",
@@ -175,7 +213,8 @@ export function deriveStyleProfile(seedTracks: TrackWithFeatures[]): StyleProfil
   return {
     tags: tagFrequency,
     mainStyles,
-    embeddings
+    embeddings,
+    expandedStyles: expandStyleTags(mainStyles)
   };
 }
 
@@ -187,31 +226,71 @@ export function computeStyleAffinityScore(
   seedProfile: StyleProfile,
   options: { useEmbeddings?: boolean } = {}
 ): number {
-  // If candidate has no style information, return neutral score
   const candidateTags = candidateTrack.features?.styleTags || extractStyleTags(candidateTrack);
   if (candidateTags.length === 0 || seedProfile.mainStyles.length === 0) {
     return 0.5;
   }
 
-  let score = 0;
+  const normalizedCandidateTags = normalizeStyleTags(candidateTags);
+  const seedMainStyles = normalizeStyleTags(seedProfile.mainStyles);
+  const candidateExpanded = expandStyleTags(normalizedCandidateTags);
+  const seedExpanded = seedProfile.expandedStyles?.length ? seedProfile.expandedStyles : expandStyleTags(seedMainStyles);
+  const candidateFamilies = candidateExpanded.filter((tag) => !normalizedCandidateTags.includes(tag));
+  const seedFamilies = seedExpanded.filter((tag) => !seedMainStyles.includes(tag));
 
-  // Tag-based similarity (60% weight)
-  const tagOverlap = candidateTags.filter((tag) => seedProfile.mainStyles.includes(tag)).length;
-  const tagSimilarity = tagOverlap / Math.max(candidateTags.length, seedProfile.mainStyles.length);
+  const exactMatches = normalizedCandidateTags.filter((tag) => seedMainStyles.includes(tag)).length;
+  const exactTagScore = exactMatches / Math.max(1, Math.min(normalizedCandidateTags.length, seedMainStyles.length));
 
-  // Handle exact matches with boost
-  const exactMatches = candidateTags.filter((tag) => seedProfile.mainStyles.includes(tag)).length;
-  const exactMatchBoost = exactMatches > 0 ? 0.1 : 0;
+  const familyMatches = candidateFamilies.filter((tag) => seedFamilies.includes(tag)).length;
+  const familyScore = familyMatches / Math.max(1, Math.min(candidateFamilies.length, seedFamilies.length));
 
-  score = tagSimilarity * 0.6 + exactMatchBoost * 0.1;
+  const hasEmbedding = options.useEmbeddings && seedProfile.embeddings.length > 0 && candidateTrack.features?.styleEmbedding;
+  const embeddingScore = hasEmbedding
+    ? computeEmbeddingSimilarity(candidateTrack.features?.styleEmbedding ?? [], seedProfile.embeddings)
+    : null;
+  const metadataConfidenceScore = metadataConfidence(candidateTrack, normalizedCandidateTags);
 
-  // Embedding-based similarity (40% weight) if available
-  if (options.useEmbeddings && seedProfile.embeddings.length > 0 && candidateTrack.features?.styleEmbedding) {
-    const embeddingSimilarity = computeEmbeddingSimilarity(candidateTrack.features.styleEmbedding, seedProfile.embeddings);
-    score = score * 0.6 + embeddingSimilarity * 0.4;
+  let score: number;
+  if (embeddingScore == null) {
+    score = exactTagScore * 0.5 + familyScore * 0.4 + metadataConfidenceScore * 0.1;
+  } else {
+    score = exactTagScore * 0.4 + familyScore * 0.3 + embeddingScore * 0.2 + metadataConfidenceScore * 0.1;
   }
 
   return Math.max(0, Math.min(1, score));
+}
+
+export function expandStyleTags(tags: string[]): string[] {
+  const expanded = new Set<string>();
+  for (const tag of normalizeStyleTags(tags)) {
+    expanded.add(tag);
+    for (const parent of STYLE_ONTOLOGY[tag] ?? []) {
+      expanded.add(parent);
+      for (const grandParent of STYLE_ONTOLOGY[parent] ?? []) {
+        expanded.add(grandParent);
+      }
+    }
+  }
+  return Array.from(expanded);
+}
+
+export function getSharedStyleFamilies(candidateTags: string[], seedTags: string[]): string[] {
+  const candidateExpanded = expandStyleTags(candidateTags);
+  const seedExpanded = expandStyleTags(seedTags);
+  return candidateExpanded.filter((tag) => seedExpanded.includes(tag) && !candidateTags.includes(tag));
+}
+
+function metadataConfidence(candidateTrack: TrackWithFeatures, candidateTags: string[]): number {
+  if (candidateTrack.features?.styleEmbedding?.length) {
+    return 1;
+  }
+  if (candidateTrack.features?.styleTags?.length) {
+    return 0.9;
+  }
+  if (candidateTrack.genre && candidateTags.length > 0) {
+    return 0.75;
+  }
+  return 0.45;
 }
 
 /**
@@ -275,10 +354,18 @@ export function getStyleRationale(
     if (overlap.length > 0) {
       return `Style has some alignment (shared: ${overlap.join(", ")})`;
     }
+    const sharedFamilies = getSharedStyleFamilies(candidateTags, seedMainStyles);
+    if (sharedFamilies.length > 0) {
+      return `Style is related through parent family: ${sharedFamilies.slice(0, 3).join("/")}`;
+    }
     return "Style has moderate compatibility with seed profile";
   }
   if (affinityScore >= 0.45) {
-    return "Style diverges somewhat from seed profile";
+    const sharedFamilies = getSharedStyleFamilies(candidateTags, seedMainStyles);
+    if (sharedFamilies.length > 0) {
+      return `Weak style match but related through parent family: ${sharedFamilies.slice(0, 2).join("/")}`;
+    }
+    return "Weak style match but accepted in exploratory mode";
   }
   return "Style is a significant departure from seed profile";
 }
@@ -291,9 +378,9 @@ export function isStyleOutlier(
   profileVariant: "safe" | "balanced" | "exploratory"
 ): boolean {
   const thresholds = {
-    safe: 0.6,
+    safe: 0.55,
     balanced: 0.35,
-    exploratory: 0.15
+    exploratory: 0.2
   };
 
   return affinityScore < thresholds[profileVariant];

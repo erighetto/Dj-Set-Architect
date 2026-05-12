@@ -12,30 +12,30 @@ export interface ScoringWeights {
 
 export const VARIANT_PROFILE_WEIGHTS: Record<VariantProfile, ScoringWeights> = {
   safe: {
-    bpm: 0.3,
-    key: 0.3,
+    bpm: 0.25,
+    key: 0.25,
     energy: 0.18,
-    danceability: 0.04,
+    danceability: 0.02,
     mood: 0.02,
-    genre: 0.01,
-    style: 0.15
+    genre: 0.03,
+    style: 0.25
   },
   balanced: {
-    bpm: 0.25,
-    key: 0.2,
+    bpm: 0.22,
+    key: 0.18,
     energy: 0.2,
-    danceability: 0.08,
+    danceability: 0.03,
     mood: 0.04,
-    genre: 0.03,
-    style: 0.2
+    genre: 0.08,
+    style: 0.25
   },
   exploratory: {
-    bpm: 0.15,
+    bpm: 0.18,
     key: 0.12,
     energy: 0.2,
-    danceability: 0.12,
-    mood: 0.12,
-    genre: 0.08,
-    style: 0.21
+    danceability: 0.05,
+    mood: 0.1,
+    genre: 0.1,
+    style: 0.25
   }
 };
