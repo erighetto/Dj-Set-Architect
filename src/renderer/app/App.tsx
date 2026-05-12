@@ -35,6 +35,7 @@ function App() {
   const [exportText, setExportText] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [seedDetailsById, setSeedDetailsById] = useState<Record<string, TrackWithFeatures>>({});
   const hasElectronApi = typeof window !== "undefined" && Boolean(window.djSetArchitect);
 
   async function refresh() {
@@ -58,6 +59,52 @@ function App() {
     }
     void refresh();
   }, []);
+
+  useEffect(() => {
+    setSeedDetailsById((prev) => {
+      const next: Record<string, TrackWithFeatures> = {};
+      for (const id of selectedSeeds) {
+        if (prev[id]) {
+          next[id] = prev[id];
+        }
+      }
+      if (Object.keys(prev).length === Object.keys(next).length && selectedSeeds.every((id) => prev[id] === next[id])) {
+        return prev;
+      }
+      return next;
+    });
+  }, [selectedSeeds]);
+
+  useEffect(() => {
+    if (!hasElectronApi) {
+      return;
+    }
+    const inResults = new Set(tracks.map((t) => t.id));
+    const missing = selectedSeeds.filter((id) => !inResults.has(id) && !seedDetailsById[id]);
+    if (missing.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const fetched: Record<string, TrackWithFeatures> = {};
+      for (const id of missing) {
+        try {
+          const track = await getApi().tracks.getById(id);
+          if (track) {
+            fetched[id] = track;
+          }
+        } catch {
+          /* ignore missing or IPC errors */
+        }
+      }
+      if (!cancelled && Object.keys(fetched).length > 0) {
+        setSeedDetailsById((prev) => ({ ...prev, ...fetched }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasElectronApi, selectedSeeds, tracks, seedDetailsById]);
 
   useEffect(() => {
     if (!hasElectronApi) {
@@ -87,10 +134,11 @@ function App() {
     }
   }
 
-  const selectedSeedTracks = useMemo(
-    () => selectedSeeds.map((id) => tracks.find((track) => track.id === id)).filter(Boolean) as TrackWithFeatures[],
-    [selectedSeeds, tracks]
-  );
+  const selectedSeedTracks = useMemo(() => {
+    return selectedSeeds
+      .map((id) => tracks.find((track) => track.id === id) ?? seedDetailsById[id])
+      .filter(Boolean) as TrackWithFeatures[];
+  }, [selectedSeeds, tracks, seedDetailsById]);
 
   return (
     <main className="shell">
@@ -143,15 +191,57 @@ function App() {
             <header className="sectionHeader">
               <div>
                 <h2>Track Library</h2>
-                <p>Search imported tracks and inspect normalized feature coverage.</p>
+                <p>Search tracks, toggle seeds for set generation, and inspect feature coverage. Seeds stay listed below even when they are not in the current search results.</p>
               </div>
               <div className="search">
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search title, artist, album, genre" />
-              <button disabled={busy || !hasElectronApi} onClick={() => runAction(refresh)}>
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void runAction(refresh);
+                    }
+                  }}
+                  placeholder="Search title, artist, album, genre"
+                />
+                <button type="button" disabled={busy || !hasElectronApi} onClick={() => runAction(refresh)}>
                   Search
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  disabled={busy || !hasElectronApi || query.trim() === ""}
+                  title="Clear the search field and reload the first tracks from the library"
+                  onClick={() =>
+                    runAction(async () => {
+                      setQuery("");
+                      const api = getApi();
+                      const [nextTracks, nextCoverage] = await Promise.all([
+                        api.tracks.search({ query: "", limit: 300 }),
+                        api.analysis.getStatus()
+                      ]);
+                      setTracks(nextTracks);
+                      setCoverage(nextCoverage);
+                    })
+                  }
+                >
+                  Clear search
                 </button>
               </div>
             </header>
+            <div className="resultsMeta">{tracks.length} track{tracks.length === 1 ? "" : "s"} in this result set</div>
+            <div className="seedPanel">
+              <div className="seedPanelHeader">
+                <h3>Seeding selection</h3>
+                <span className="pill muted">{selectedSeeds.length} selected</span>
+              </div>
+              <SeedList
+                seeds={selectedSeedTracks}
+                emptyCopy="No seeds yet. Use the checkboxes in the results table below."
+                onRemove={(id) => setSelectedSeeds((current) => current.filter((seed) => seed !== id))}
+              />
+            </div>
             <TrackTable tracks={tracks} selectedSeeds={selectedSeeds} onToggleSeed={toggleSeed} />
           </section>
         )}
@@ -220,9 +310,25 @@ function App() {
                 </select>
               </label>
             </div>
-            <h3>Seed Track Selection</h3>
-            <SeedList seeds={selectedSeedTracks} onRemove={(id) => setSelectedSeeds((current) => current.filter((seed) => seed !== id))} />
-            <TrackTable tracks={tracks} selectedSeeds={selectedSeeds} onToggleSeed={toggleSeed} compact />
+            <div className="seedPanel">
+              <div className="seedPanelHeader">
+                <h3>Seed track selection</h3>
+                <span className="pill muted">{selectedSeeds.length} selected</span>
+              </div>
+              <p className="muted seedPanelLead">
+                Pick and review seeds in <strong>Track Library</strong> using search and checkboxes. This screen keeps duration and curve settings together with your current seed list.
+              </p>
+              <div className="toolbar seedPanelToolbar">
+                <button type="button" className="ghost" onClick={() => setView("library")}>
+                  Open Track Library
+                </button>
+              </div>
+              <SeedList
+                seeds={selectedSeedTracks}
+                emptyCopy="No seeds yet. Open Track Library to search imported tracks and mark them as seeds."
+                onRemove={(id) => setSelectedSeeds((current) => current.filter((seed) => seed !== id))}
+              />
+            </div>
             <button
               disabled={busy || selectedSeeds.length === 0}
               onClick={() =>
@@ -378,9 +484,17 @@ function TrackTable({
   );
 }
 
-function SeedList({ seeds, onRemove }: { seeds: TrackWithFeatures[]; onRemove: (id: string) => void }) {
+function SeedList({
+  seeds,
+  onRemove,
+  emptyCopy
+}: {
+  seeds: TrackWithFeatures[];
+  onRemove: (id: string) => void;
+  emptyCopy?: string;
+}) {
   if (seeds.length === 0) {
-    return <p>No seeds selected. Choose at least one track from the table.</p>;
+    return <p className="seedListEmpty">{emptyCopy ?? "No seeds selected."}</p>;
   }
   return (
     <ol className="seedList">
